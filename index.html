@@ -268,11 +268,11 @@ a.btn{display:inline-flex;align-items:center;justify-content:center;text-decorat
     </div>
     <div class="linkBox"><input id="qLink" readonly aria-label="出題リンク"><button class="btn" id="copyBtn" type="button">コピー</button></div>
     <div class="rRow">
+      <button class="btn" id="qSave" type="button">画像を共有</button>
       <a class="btn fire" id="qX" href="https://twitter.com/intent/tweet" target="_blank" rel="noopener">Xで出題</a>
-      <button class="btn" id="qSave" type="button">画像を保存</button>
     </div>
     <div class="rRow">
-      <button class="btn" id="qRedo" type="button">彫り直す</button>
+      <button class="btn" id="qRedo" type="button">もう一度彫る</button>
       <button class="btn" id="qHome" type="button">タイトルへ</button>
     </div>
   </div>
@@ -291,7 +291,7 @@ a.btn{display:inline-flex;align-items:center;justify-content:center;text-decorat
     </div>
     <div class="best" id="rBest"></div>
     <div class="rRow">
-      <button class="btn" id="saveBtn" type="button">画像を保存</button>
+      <button class="btn" id="saveBtn" type="button">画像を共有</button>
       <a class="btn" id="xBtn" href="https://twitter.com/intent/tweet" target="_blank" rel="noopener">Xでシェア</a>
     </div>
     <div class="rRow">
@@ -760,8 +760,8 @@ function prepareResult(){
   const f=Math.round(result.F*100),i=Math.round(result.iou*100);R.F.textContent=f+'%';R.I.textContent=i+'%';R.Fb.style.width=R.Ib.style.width='0';
   R.best.className='best'+(up?' up':'');
   R.best.textContent=up?(bestPrev?`自己ベスト更新！ ${bestPrev}% → ${result.score}%`:`${sh.name}の自己ベスト ${result.score}%`):`${sh.name}の自己ベスト ${bestPrev}%`;
-  shareText=`かぼちゃを彫って灯したら、お題「${sh.name}」の影は ${result.score}%「${tier.say(sh.name)}」でした🎃`;
-  R.x.href='https://twitter.com/intent/tweet?text='+encodeURIComponent(shareText)+'&hashtags='+encodeURIComponent('かぼちゃの影絵,ハロウィン')+(SHARE_URL?'&url='+encodeURIComponent(SHARE_URL):'');
+  shareText=`🎃 お題「${sh.name}」をかぼちゃに彫って灯してみた\n影の一致 ${result.score}%｜${tier.say(sh.name)}${up&&bestPrev?'（自己ベスト更新！）':''}\nあなたも彫ってみて👇`;
+  R.x.href=xIntent(shareText,SHARE_URL||location.href.split('#')[0]);
   R.img.removeAttribute('src');drawCard();
 }
 function openResult(){if(resOpen||state!=='light')return;resOpen=true;
@@ -769,13 +769,23 @@ function openResult(){if(resOpen||state!=='light')return;resOpen=true;
   requestAnimationFrame(()=>{R.Fb.style.width=Math.round(result.F*100)+'%';R.Ib.style.width=Math.round(result.iou*100)+'%'})}
 function closeResult(){resOpen=false;for(const el of[R.el,QZ.pick,QZ.share]){el.classList.remove('on');el.inert=true}}
 function showScreen(el){closeResult();resOpen=true;el.inert=false;el.classList.add('on');el.scrollTop=0;ui.sheet.classList.remove('on');ui.card.classList.add('off')}
-async function saveCanvas(cnv,name,text){Snd.init();
-  const blob=await new Promise(r=>cnv.toBlob(r,'image/png'));if(!blob)return;
-  const file=new File([blob],name,{type:'image/png'});
-  try{if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],text});return}}catch(e){if(e&&e.name==='AbortError')return}
-  try{const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),4000)}catch(e){}
+/* ---------- 共有 ----------
+   X：投稿画面を開く（本文・URL・ハッシュタグ入り）。画像は付けられないので、カードは OGP。
+   画像を共有：スマホの共有メニューに、画像と本文（URL とハッシュタグ入り）をまとめて渡す。
+   共有メニューは「押した瞬間」に呼ばないと iPhone で断られるので、画面に出ている画像からその場でファイルを作る（待たない） */
+const TAGS=['かぼちゃの影絵','ハロウィン'];
+const xIntent=(text,url)=>'https://twitter.com/intent/tweet?text='+encodeURIComponent(text)+(url?'&url='+encodeURIComponent(url):'')+'&hashtags='+encodeURIComponent(TAGS.join(','));
+const sheetText=(text,url)=>text+'\n'+(url?url+'\n':'')+TAGS.map(t=>'#'+t).join(' ');
+function fileFromImg(img,name){const u=img.src;if(!u||!u.startsWith('data:'))return null;
+  const [h,b]=u.split(','),type=h.slice(5,h.indexOf(';')),bin=atob(b),a=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)a[i]=bin.charCodeAt(i);
+  return new File([a],name,{type})}
+function shareImage(img,name,text,url){Snd.init();
+  const file=fileFromImg(img,name),full=sheetText(text,url);
+  if(file&&navigator.canShare&&navigator.canShare({files:[file]})){navigator.share({files:[file],text:full}).catch(()=>{});return}
+  if(navigator.share){navigator.share({text:full}).catch(()=>{});return}             // 画像を渡せない端末：本文だけでも
+  if(file)try{const a=document.createElement('a');a.href=URL.createObjectURL(file);a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),4000)}catch(e){}
 }
-$('saveBtn').onclick=()=>saveCanvas(card,'kabocha-kagee.png',shareText);
+$('saveBtn').onclick=()=>shareImage(R.img,'kabocha-shadow.jpg',shareText,SHARE_URL||location.href.split('#')[0]);
 ui.sheet.addEventListener('pointerdown',()=>{if(stamped)openResult()});
 
 /* ---------- クイズモード ----------
@@ -932,14 +942,14 @@ $('pickBack').onclick=()=>toTitle();
 function prepareQuiz(){
   quizLink=(SHARE_URL||location.href.split('#')[0])+'#q'+encodeQuiz(quizAns,quizCh,polys);
   QZ.link.value=quizLink;QZ.ans.textContent='答え　'+WORDS[quizAns]+'（当てる人にはないしょ）';QZ.copy.textContent='コピー';
-  quizText='かぼちゃを彫って、影絵クイズを作りました。この影、何に見える？🎃';
-  QZ.x.href='https://twitter.com/intent/tweet?text='+encodeURIComponent(quizText)+'&hashtags='+encodeURIComponent('かぼちゃの影絵,ハロウィン')+'&url='+encodeURIComponent(quizLink);
+  quizText='🎃 影絵クイズ\nかぼちゃを彫って灯したら、壁にこんな影が。\nこの影、何に見える？ 4択で当ててみて👇';
+  QZ.x.href=xIntent(quizText,quizLink);
   QZ.img.removeAttribute('src');drawQuizCard()}
 function openQuizShare(){if(resOpen||state!=='light')return;showScreen(QZ.share);Snd.whoosh()}
 QZ.copy.onclick=()=>{const done=()=>{QZ.copy.textContent='コピーしました'};
   try{navigator.clipboard.writeText(quizLink).then(done,()=>{QZ.link.select();QZ.copy.textContent='選択しました'})}catch(e){QZ.link.select()}};
 QZ.link.onfocus=()=>QZ.link.select();
-$('qSave').onclick=()=>saveCanvas(qcard,'kabocha-kagee-quiz.png',quizText);
+$('qSave').onclick=()=>shareImage(QZ.img,'kabocha-shadow-quiz.jpg',quizText,quizLink);
 $('qRedo').onclick=()=>{closeResult();cardQuiz('答え（ないしょ）',WORDS[quizAns],quizAns);drawCardGuide();goCarve()};
 $('qHome').onclick=()=>toTitle();
 
