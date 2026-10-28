@@ -907,12 +907,14 @@ function answer(c,btn){if(answered)return;answered=true;const ok=c===guest.ans;
   for(const b of qs.choices.children){b.disabled=true;if(b!==btn)b.classList.add('dim')}
   [...qs.choices.children][guest.ch.indexOf(guest.ans)].classList.remove('dim');[...qs.choices.children][guest.ch.indexOf(guest.ans)].classList.add('right');
   if(!ok)btn.classList.add('miss');
-  tier=ok?TIERS[0]:TIERS[4];qs.el.dataset.tier=tier.k;startTierFx();Snd.tier(tier.k);if(ok){shakeT=0;shakeA=6}
+  tier=ok?TIERS[0]:TIERS[4];qs.el.dataset.tier=tier.k;if(!replay){startTierFx();Snd.tier(tier.k);if(ok){shakeT=0;shakeA=6}}
   const sub=replay?`あなたの答え：${WORDS[c]}`:ok?'かぼちゃの表がこちら':'かぼちゃの表を見てみると…';
   qs.v.innerHTML=(ok?`正解！ ${WORDS[guest.ans]}でした`:`ざんねん！ 正解は${WORDS[guest.ans]}`)+`<small>${sub}</small>`;
-  qs.v.hidden=false;setTimeout(()=>{qs.end.hidden=false;layout()},500)}
+  qs.v.hidden=false;if(replay){qs.end.hidden=false;layout();return}setTimeout(()=>{qs.end.hidden=false;layout()},500)}
 $('guessBtn').onclick=()=>{replay=false;startGuess()};
-$('svReplay').onclick=()=>{replay=true;startGuess()};
+// 影をもう一度見る：最初から再生し直さず、答え合わせが終わった画面（灯ったかぼちゃ＋壁の影＋前回の答え＋出口）をすぐ出す
+$('svReplay').onclick=()=>{replay=true;startGuess();st=3;V.dark=.88;V.lit=1;V.proj=1;V.face=1;
+  qs.el.classList.add('on');answer(guestRec.pick,[...qs.choices.children][guest.ch.indexOf(guestRec.pick)]);Object.assign(cam,L.camReveal)};
 $('svMake').onclick=()=>{toTitle();openPick()};
 $('svSkip').onclick=()=>{guest=null;titleButtons()};
 $('skipGuest').onclick=()=>{guest=null;titleButtons()};
@@ -952,7 +954,7 @@ function update(dt){
     if(st-dt<1.25&&st>=1.25)Snd.bloom();
     // 当てる側はタイトルの時点でもう暗い部屋にいる。「灯す」を押したら、明るく戻さず 0.18 秒でそのまま暗転（顔も灯りと一緒に消える）
     if(state==='guess'){const out=eOutC(seg(st,0,.18));V.dark=Math.max(V.dark,.88*out);if(st<.85)V.lit=1-out;
-      V.line=V.miss=0;if(st>=2.7&&!qs.el.classList.contains('on')){qs.el.classList.add('on');if(replay&&guestRec)setTimeout(()=>{if(state==='guess'&&!answered)answer(guestRec.pick,[...qs.choices.children][guest.ch.indexOf(guestRec.pick)])},700)}V.face=answered?damp(V.face,1,2.4,dt):1-out}
+      V.line=V.miss=0;if(st>=2.7&&!qs.el.classList.contains('on')){qs.el.classList.add('on')}V.face=answered?damp(V.face,1,2.4,dt):1-out}
     else if(mode==='quiz'){V.line=V.miss=0;if(st>=3.6)openQuizShare()}
     else{V.line=eOutC(seg(st,2.3,2.9));V.miss=eOutC(seg(st,4.3,4.9))}
     if(state==='light'&&mode==='odai'&&st>=2.6){ui.sheet.classList.add('on');
