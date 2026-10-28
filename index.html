@@ -773,7 +773,7 @@ function showScreen(el){closeResult();resOpen=true;el.inert=false;el.classList.a
    X：投稿画面を開く（本文・URL・ハッシュタグ入り）。画像は付けられないので、カードは OGP。
    画像を共有：スマホの共有メニューに、画像と本文（URL とハッシュタグ入り）をまとめて渡す。
    共有メニューは「押した瞬間」に呼ばないと iPhone で断られるので、画面に出ている画像からその場でファイルを作る（待たない） */
-const TAGS=['かぼちゃの影絵','ハロウィン'];
+const TAGS=['かぼちゃの影絵'];
 const xIntent=(text,url)=>'https://twitter.com/intent/tweet?text='+encodeURIComponent(text)+(url?'&url='+encodeURIComponent(url):'')+'&hashtags='+encodeURIComponent(TAGS.join(','));
 const sheetText=(text,url)=>text+'\n'+(url?url+'\n':'')+TAGS.map(t=>'#'+t).join(' ');
 function fileFromImg(img,name){const u=img.src;if(!u||!u.startsWith('data:'))return null;
