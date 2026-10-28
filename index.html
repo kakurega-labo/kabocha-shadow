@@ -282,6 +282,7 @@ body{background:var(--night);color:var(--ink);font-family:var(--body);overflow:h
       <button class="btn" id="againBtn" type="button">もう一度彫る</button>
       <button class="btn fire" id="nextBtn" type="button">次のお題</button>
     </div>
+    <div class="rRow one"><button class="btn" id="rHome" type="button">タイトルへ</button></div>
   </div>
 </section>
 
@@ -657,6 +658,7 @@ ui.light.onclick=()=>{Snd.init();goLight()};
 ui.undo.onclick=()=>{polys.pop();rebuildMask();syncButtons();wobV+=.8;Snd.crunch()};
 $('againBtn').onclick=()=>goCarve();
 $('nextBtn').onclick=()=>{setShape(shapeIdx+1);goCarve()};
+$('rHome').onclick=()=>toTitle();
 $('snd').onclick=e=>{Snd.init();Snd.on=!Snd.on;e.currentTarget.textContent=Snd.on?'音 ON':'音 OFF'};
 addEventListener('keydown',e=>{if(state!=='carve')return;if(e.key==='Enter')goLight();if(e.key==='z'||e.key==='Backspace')ui.undo.click()});
 
