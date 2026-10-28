@@ -74,7 +74,8 @@ body{background:var(--night);color:var(--ink);font-family:var(--body);overflow:h
 .tFoot p{margin:0 0 6px;color:var(--dim);font-size:14px;line-height:1.7}
 
 /* 結果。段位ごとに色と判子の形が変わる */
-.sheet{position:fixed;left:0;right:0;bottom:0;padding:18px max(16px,env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 18px) max(16px,env(safe-area-inset-left,0px));background:var(--panel);border-top:1px solid var(--line);border-radius:22px 22px 0 0;display:flex;flex-direction:column;align-items:center;gap:6px;transform:translateY(110%);transition:transform .6s cubic-bezier(.2,.95,.25,1.08),box-shadow .6s}
+.sheet{position:fixed;left:0;right:0;bottom:0;padding:18px max(16px,env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 18px) max(16px,env(safe-area-inset-left,0px));background:var(--panel);border-top:1px solid var(--line);border-radius:22px 22px 0 0;display:flex;flex-direction:column;align-items:center;gap:6px;transform:translateY(110%);transition:transform .55s cubic-bezier(.16,1,.3,1),box-shadow .6s}
+.sheet::after{content:"";position:absolute;left:0;right:0;top:100%;height:60px;background:inherit}
 .sheet.on{transform:none}
 .sheet[data-tier="S"]{--tc:#FFD66B;box-shadow:0 -10px 60px rgba(255,200,80,.35)}
 .sheet[data-tier="A"]{--tc:#FF9A45}
@@ -1007,8 +1008,12 @@ function render(){
     ctx.globalCompositeOperation='lighter';
     let g=ctx.createRadialGradient(fx,fy,rf*.3,fx,fy,pr*2);g.addColorStop(0,`rgba(255,150,50,${.34*V.lit*fl})`);g.addColorStop(1,'rgba(255,120,40,0)');
     ctx.fillStyle=g;ctx.fillRect(fx-pr*2,fy-pr*2,pr*4,pr*4);
-    if(V.proj>.002){const a=.07*V.proj*fl;g=ctx.createLinearGradient(0,fy,0,wy);g.addColorStop(0,`rgba(255,180,90,${a})`);g.addColorStop(1,`rgba(255,190,110,${a*.4})`);
-      ctx.fillStyle=g;ctx.beginPath();ctx.moveTo(fx-rf*.5,fy-rf*.4);ctx.lineTo(wx-rw*1.2,wy);ctx.lineTo(wx+rw*1.2,wy);ctx.lineTo(fx+rf*.5,fy-rf*.4);ctx.closePath();ctx.fill();
+    if(V.proj>.002){
+      // 光の筋：かぼちゃの上（ヘタのまわり）から出て、壁の「影がある所」へ広がる。かぼちゃの胴には重ねない。
+      // 幅の違う2枚を重ねて、ふちをやわらかく見せる
+      const a=.075*V.proj*fl,q=2*rw*E/G,scx=wx+(shadowC.ax-G/2)*q,scy=wy+(shadowC.ay-G/2)*q,hw=Math.max(rw*.6,shadowC.r*q*1.6),by=py-pr*.8;
+      g=ctx.createLinearGradient(0,by,0,scy);g.addColorStop(0,`rgba(255,180,90,${a})`);g.addColorStop(1,`rgba(255,190,110,${a*.35})`);ctx.fillStyle=g;
+      for(const k of[1,.6]){ctx.beginPath();ctx.moveTo(px-pr*.22*k,by);ctx.lineTo(scx-hw*k,scy);ctx.lineTo(scx+hw*k,scy);ctx.lineTo(px+pr*.22*k,by);ctx.closePath();ctx.fill()}
       // 影絵：ぽわっと広がって、少し大きく出てから収まる。B は首をかしげるように揺れる
       const gr=.82+.18*eOutBack(V.proj),r=rw*E*gr*(1+(fl-1)*.03),A=V.proj*fl;
       const tilt=fxT>=0&&tier.k==='B'?.16*Math.sin(fxT*6)*Math.exp(-fxT*1.6):0;
