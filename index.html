@@ -60,6 +60,10 @@ body{background:var(--night);color:var(--ink);font-family:var(--body);overflow:h
 .btn.fire:not(:disabled){box-shadow:0 0 26px rgba(255,160,60,.45)}
 .hint{position:fixed;left:0;right:0;bottom:calc(env(safe-area-inset-bottom,0px) + 86px);text-align:center;font-size:14px;color:var(--ink);text-shadow:0 1px 8px #000;padding-inline:16px;pointer-events:none;transition:opacity .5s}
 .hint.off{opacity:0}
+.snd+.snd{margin-left:0}
+.snd{white-space:nowrap}
+.card>div{min-width:0}
+.card small{white-space:nowrap}
 
 /* タイトル：上に題字、下に一言とスタート。まん中はかぼちゃのために空けておく */
 .tHead,.tFoot{position:fixed;left:0;right:0;display:flex;flex-direction:column;align-items:center;gap:8px;padding-inline:16px;text-align:center;transition:opacity .45s,transform .6s cubic-bezier(.2,.9,.25,1)}
@@ -800,9 +804,53 @@ function decodeQuiz(h){
   const P=mixBytes(B.slice(2),B[1]),body=P.slice(0,-1);
   return sum8(body)===P[P.length-1]?parseQuiz(body):null}
 
-function cardQuiz(label,name){$('cardLabel').textContent=label;$('cardName').textContent=name;
-  const cc=$('cardCv').getContext('2d');cc.setTransform(1,0,0,1,0,0);cc.clearRect(0,0,96,96);
-  cc.font='900 60px "Zen Maru Gothic",sans-serif';cc.textAlign='center';cc.textBaseline='middle';cc.fillStyle='#FFC864';cc.fillText('？',48,52)}
+const EMOJI_FONT='"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
+// 語の形：お題モードの形があればそれ（結果の答え合わせと同じ形）、なければ手描きの形、なければ絵文字
+const HAND={
+  '魔女の帽子':c=>{c.moveTo(-.9,.62);c.quadraticCurveTo(0,.38,.9,.62);c.quadraticCurveTo(0,.86,-.9,.62);c.closePath();
+    c.moveTo(-.5,.58);c.quadraticCurveTo(-.2,-.1,.05,-.55);c.quadraticCurveTo(.35,-.85,.62,-.72);c.quadraticCurveTo(.32,-.55,.3,-.2);c.lineTo(.5,.58);c.closePath()},
+  '大鍋':c=>{c.ellipse(0,.12,.78,.62,0,0,Math.PI);c.lineTo(-.86,-.2);c.lineTo(.86,-.2);c.closePath();
+    c.moveTo(-.55,.62);c.lineTo(-.68,.88);c.lineTo(-.4,.88);c.closePath();c.moveTo(.55,.62);c.lineTo(.68,.88);c.lineTo(.4,.88);c.closePath()},
+};
+const shapeOf=i=>SHAPES.find(x=>x.name===WORDS[i])||(HAND[WORDS[i]]?{parts:[HAND[WORDS[i]]]}:null);
+function cardQuiz(label,name,i){$('cardLabel').textContent=label;$('cardName').textContent=name;
+  const cc=$('cardCv').getContext('2d'),sh=i==null?null:shapeOf(i),emo=i==null?null:EMO[i];
+  cc.setTransform(1,0,0,1,0,0);cc.clearRect(0,0,96,96);cc.textAlign='center';cc.textBaseline='middle';
+  if(sh){cc.setTransform(38,0,0,38,48,48);cc.fillStyle='#F4E9D6';fillShape(cc,sh)}
+  else if(emo){cc.font='58px '+EMOJI_FONT;cc.fillText(emo,48,52)}
+  else{cc.font='900 60px "Zen Maru Gothic",sans-serif';cc.fillStyle='#FFC864';cc.fillText('？',48,52)}}
+// 語ごとの絵文字（WORDS と同じ並び）。ガイド線の形と、出題する人の札の絵に使う。null はガイドなし
+const EMO=['🐈','👻','🦇','🌙',null,'🧹','💀','🕷️','🍬','⭐','🪦','🐦',
+  null,'🐺','🧟','🧙','😈','🪄',null,'🕸️','👁️','🦴','⚰️','🏰','🦉','🕯️','🎃',
+  '🐇','🐕','🐁','🐖','🐘','🦒','🐎','🦁','🐍','🐸','🐢','🐌','🐟','🐋','🐙','🦀','🦑','🐦','🦆','🐧','🦋',null,'🐝','🦖',
+  '🍎','🍌','🍇','🍓','🍐','🍒','🥕','🍙','🍦','🍩','🍰','🍳','🍔','🍕','🍮',
+  '🏠','☂️','❤️','🔑','👑','🚀','🚗','✈️','🚢','💡','⏰','👓','🧤','👟','🔔','✂️','🎸','☕','🎈','🎀',
+  '🌳','🌸','🍃','🍄','🌵','⛰️','☁️','☀️','⚡','💧','⛄','✋','👣','➡️','💎'];
+/* ガイド線：答えの形を、かぼちゃの丸みのぶん先にゆがめて、彫る面に描く。この線をなぞると壁の影がその形になる。
+   作り方：絵文字を描いて形（不透明な所）を取り、彫る面の各点を「壁のどこに映るか」へ逆算して、形の内外を調べる。ふちだけ残す */
+const GS=160,guideCv=mk(GS,GS),gctx=guideCv.getContext('2d');let hasGuide=false,cardPk=null;
+function wallOf(pu,pv){const a=pu,b=(pv-.02)/.95,m=Math.hypot(a,b);if(m<1e-6)return[0,0];
+  let r=m;for(let i=0;i<8;i++){r-=(r*(1+KBAR*r*r)/(1+KBAR)-m)/((1+3*KBAR*r*r)/(1+KBAR))}   // m = r·f(r) をニュートン法で解く
+  return[a/m*r*E,b/m*r*E]}
+function makeGuide(i){hasGuide=false;gctx.clearRect(0,0,GS,GS);const sh=shapeOf(i),emo=EMO[i];if(!sh&&!emo)return;
+  const S=200,sc=mk(S,S),sx=sc.getContext('2d',{willReadFrequently:true});
+  if(sh){sx.setTransform(S/2*.9,0,0,S/2*.9,S/2,S/2);sx.fillStyle='#fff';fillShape(sx,sh);sx.setTransform(1,0,0,1,0,0)}
+  else{sx.font=`${S*.78}px ${EMOJI_FONT}`;sx.textAlign='center';sx.textBaseline='middle';sx.fillText(emo,S/2,S*.53)}
+  const d=sx.getImageData(0,0,S,S).data;let x0=S,y0=S,x1=0,y1=0,n=0;
+  for(let y=0;y<S;y++)for(let x=0;x<S;x++)if(d[(y*S+x)*4+3]>90){n++;if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y}
+  if(n<S*S*.03)return;                                         // 絵文字が出せない端末では、ガイドを出さない
+  const cx=(x0+x1)/2,cy=(y0+y1)/2,half=Math.max(x1-x0,y1-y0)/2/.85;   // 形を、お題と同じ大きさ（±0.85）にそろえる
+  const inside=new Uint8Array(GS*GS);
+  for(let j=0;j<GS;j++)for(let i=0;i<GS;i++){const[wu,wv]=wallOf((i+.5)/GS*2-1,(j+.5)/GS*2-1);
+    const px=Math.round(cx+wu*half),py=Math.round(cy+wv*half);inside[j*GS+i]=px>=0&&px<S&&py>=0&&py<S&&d[(py*S+px)*4+3]>90}
+  const im=gctx.createImageData(GS,GS),o=im.data;
+  for(let j=0;j<GS;j++)for(let i=0;i<GS;i++){const k=j*GS+i;
+    if(inside[k]&&inBody((i+.5)/GS*2-1,(j+.5)/GS*2-1)){o[k*4]=255;o[k*4+1]=230;o[k*4+2]=160;o[k*4+3]=255}}
+  gctx.putImageData(im,0,0);hasGuide=true;drawCardGuide()}
+// 左上の札：小さなかぼちゃに、この形を彫れば影が答えの形になる、という見本を光る穴として描く（かぼちゃ本体には何も描かない）
+function drawCardGuide(){if(!hasGuide)return;const cc=$('cardCv').getContext('2d');cc.setTransform(1,0,0,1,0,0);cc.clearRect(0,0,96,96);
+  const pr=40,cy=54;if(!cardPk)cardPk=makePumpkin(pr,1);drawPumpkin(cc,cardPk,48,cy,pr);
+  const rf=pr*RF;cc.drawImage(guideCv,48-rf,cy-rf,rf*2,rf*2)}
 // 選ぶ画面：1/2 で答え、2/2 でひっかけ3つ（一覧から。おまかせは同じジャンルから選ぶ）
 const PK={step:1,tab:0,ans:-1,traps:[]};
 const tabsEl=$('tabs'),pkPicked=$('pkPicked');
@@ -836,7 +884,7 @@ function pickWord(i,b){Snd.init();
   else if(PK.traps.length<3)PK.traps.push(i);
   else{b.classList.remove('nope');void b.offsetWidth;b.classList.add('nope');Snd.whiff();return}
   Snd.tick(.3+PK.traps.length*.2);renderPick()}
-function startQuizCarve(){mode='quiz';quizAns=PK.ans;quizCh=shuffle([PK.ans,...PK.traps]);closeResult();cardQuiz('答え（ないしょ）',WORDS[PK.ans]);goCarve()}
+function startQuizCarve(){mode='quiz';quizAns=PK.ans;quizCh=shuffle([PK.ans,...PK.traps]);closeResult();cardQuiz('答え（ないしょ）',WORDS[PK.ans],PK.ans);makeGuide(PK.ans);goCarve()}
 $('pkAuto').onclick=()=>{const same=shuffle(WORDS.map((_,k)=>k).filter(k=>k!==PK.ans&&!PK.traps.includes(k)&&CAT_OF[k]===CAT_OF[PK.ans]));
   const rest=shuffle(WORDS.map((_,k)=>k).filter(k=>k!==PK.ans&&!PK.traps.includes(k)&&CAT_OF[k]!==CAT_OF[PK.ans]));
   PK.traps=[...PK.traps,...same,...rest].slice(0,3);startQuizCarve()};
@@ -856,7 +904,7 @@ QZ.copy.onclick=()=>{const done=()=>{QZ.copy.textContent='コピーしました'
   try{navigator.clipboard.writeText(quizLink).then(done,()=>{QZ.link.select();QZ.copy.textContent='選択しました'})}catch(e){QZ.link.select()}};
 QZ.link.onfocus=()=>QZ.link.select();
 $('qSave').onclick=()=>saveCanvas(qcard,'kabocha-kagee-quiz.png',quizText);
-$('qRedo').onclick=()=>{closeResult();cardQuiz('答え（ないしょ）',WORDS[quizAns]);goCarve()};
+$('qRedo').onclick=()=>{closeResult();cardQuiz('答え（ないしょ）',WORDS[quizAns],quizAns);drawCardGuide();goCarve()};
 $('qHome').onclick=()=>toTitle();
 
 // 出題用の1枚：影と4択だけ（かぼちゃの表は見せない）
