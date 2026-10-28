@@ -506,9 +506,12 @@ const KBAR=.28;   // かぼちゃの丸みで、まん中ほど大きく映る
 const predBits=new Uint8Array(G*G),aligned=new Uint8Array(G*G);
 let tgtBits=new Uint8Array(G*G),tgtLab=new Uint8Array(G*G),result=null;
 const toGrid=g=>g.setTransform(G/(2*E),0,0,G/(2*E),G/2,G/2);
-function prepareTarget(s){
+// お題：手で描いた形（部品つき）か、シルエット（絵文字などから作った白い形の画像）か
+let TG={name:'黒猫',np:3};
+function prepareTarget(s,sil){
   const rast=fn=>{tgtCtx.setTransform(1,0,0,1,0,0);tgtCtx.clearRect(0,0,G,G);toGrid(tgtCtx);tgtCtx.fillStyle='#fff';fn();
     const d=tgtCtx.getImageData(0,0,G,G).data,b=new Uint8Array(G*G);for(let i=0;i<G*G;i++)b[i]=d[i*4+3]>127;return b};
+  if(!s){prepareSil(sil,rast);return}
   tgtBits=rast(()=>fillShape(tgtCtx,s));tgtLab.fill(255);
   s.parts.forEach((p,i)=>{const b=rast(()=>{tgtCtx.beginPath();p(tgtCtx);tgtCtx.fill()});for(let k=0;k<G*G;k++)if(b[k]&&tgtLab[k]===255)tgtLab[k]=i});
   for(let k=0;k<G*G;k++)if(tgtLab[k]===255)tgtLab[k]=0;
@@ -519,6 +522,22 @@ function prepareTarget(s){
   octx.globalCompositeOperation='destination-out';fillShape(octx,s);octx.globalCompositeOperation='source-over';
   const cc=$('cardCv').getContext('2d');cc.setTransform(1,0,0,1,0,0);cc.clearRect(0,0,96,96);
   cc.setTransform(40,0,0,40,48,48);cc.fillStyle='#F4E9D6';fillShape(cc,s);
+}
+// シルエットのお題。部品の区切りがないので、輪郭を重心からの向きで6つに分けて部品の代わりにする
+// （耳や尾など、どこか一方向を落とすと大きく減点される、という効き方を、どの形でも同じにするため）
+function prepareSil(sil,rast){
+  tgtBits=rast(()=>tgtCtx.drawImage(sil,-1,-1,2,2));
+  let n=0,cx=0,cy=0;for(let k=0;k<G*G;k++)if(tgtBits[k]){n++;cx+=k%G;cy+=k/G|0}cx/=n||1;cy/=n||1;
+  for(let k=0;k<G*G;k++){const a=Math.atan2((k/G|0)-cy,k%G-cx);tgtLab[k]=Math.min(5,(a+Math.PI)/(2*Math.PI)*6|0)}
+  // 壁に出す輪郭：シルエットのふちを点線ふうに
+  const t=mk(OS,OS),tc=t.getContext('2d',{willReadFrequently:true});tc.setTransform(OS/(2*E),0,0,OS/(2*E),OS/2,OS/2);tc.drawImage(sil,-1,-1,2,2);
+  const d=tc.getImageData(0,0,OS,OS).data,in_=k=>d[k*4+3]>127,im=octx.createImageData(OS,OS),o=im.data;
+  for(let y=1;y<OS-1;y++)for(let x=1;x<OS-1;x++){const k=y*OS+x;
+    if(in_(k)&&(!in_(k-1)||!in_(k+1)||!in_(k-OS)||!in_(k+OS))&&((x+y)/9|0)%2===0)for(const q of[k,k+1,k+OS,k-1,k-OS]){o[q*4]=o[q*4+1]=o[q*4+2]=255;o[q*4+3]=255}}
+  octx.setTransform(1,0,0,1,0,0);octx.clearRect(0,0,OS,OS);octx.putImageData(im,0,0);
+  // 札の絵：シルエットを生成り色で
+  const cc=$('cardCv').getContext('2d');cc.setTransform(1,0,0,1,0,0);cc.clearRect(0,0,96,96);
+  cc.globalCompositeOperation='source-over';cc.drawImage(sil,8,8,80,80);cc.globalCompositeOperation='source-in';cc.fillStyle='#F4E9D6';cc.fillRect(0,0,96,96);cc.globalCompositeOperation='source-over';
 }
 let shadowC={ax:G/2,ay:G/2,r:G/4};     // 影の重心と広がり（カメラと共有画像の構図に使う）
 function computeProjection(){
@@ -534,7 +553,7 @@ function computeProjection(){
   psctx.clearRect(0,0,64,64);psctx.drawImage(proj,0,0,64,64);   // 縮めて引き伸ばす＝安いぼかし（ctx.filter を使わない）
 }
 function judgeNow(){
-  const s=SHAPES[shapeIdx];result=Judge.score(predBits,tgtBits,tgtLab,s.parts.length,G,6);
+  result=Judge.score(predBits,tgtBits,tgtLab,TG.np,G,6);
   // 足りない所：一番よく合った位置で、お題にあって光っていない所
   Judge.warp(predBits,aligned,result.s,result.ax,result.ay,result.bx,result.by);
   const im=missCtx.createImageData(G,G),o=im.data;
@@ -577,7 +596,7 @@ const Snd={ac:null,on:true,nb:null,
 };
 
 /* ---------- 状態 ---------- */
-let state='title',st=0,time=0,shapeIdx=0,tier=null;
+let state='title',st=0,time=0,tier=null;
 const V={dark:.86,lit:1,proj:0,line:0,miss:0,face:1};
 const cam={fx:0,fy:0,ax:0,ay:0,s:1};
 let wob=0,wobV=0,shakeT=9,shakeA=0;
@@ -654,7 +673,13 @@ const ui={card:$('card'),tHead:$('tHead'),tFoot:$('tFoot'),bar:$('bar'),hint:$('
   stamp:$('stamp'),verdict:$('verdict'),pct:$('resPct')};
 document.querySelector('.tHead h1').innerHTML=[...'かぼちゃの影絵'].map((ch,i)=>`<span style="animation-delay:${.15+i*.06}s">${ch}</span>`).join('');
 function syncButtons(){ui.undo.disabled=!polys.length;ui.light.disabled=!polys.some(p=>p.fill)}
-function setShape(i){shapeIdx=(i+SHAPES.length)%SHAPES.length;const s=SHAPES[shapeIdx];prepareTarget(s);$('cardLabel').textContent='お題';$('cardName').textContent=s.name;$('resQ').textContent='お題　'+s.name}
+// お題は一度ずつ全部出るまで重ならない（山札を切って配る）
+let odaiBag=[];
+function nextOdai(){
+  if(!odaiBag.length)odaiBag=shuffle(ODAI.filter(i=>WORDS[i]!==TG.name&&(shapeOf(i)||silhouette(i))));
+  const wi=odaiBag.pop(),sh=SHAPES.find(x=>x.name===WORDS[wi]);
+  TG={wi,name:WORDS[wi],np:sh?sh.parts.length:6};prepareTarget(sh||null,sh?null:silhouette(wi));
+  $('cardLabel').textContent='お題';$('cardName').textContent=TG.name;$('resQ').textContent='お題　'+TG.name}
 function goTitle(){
   mctx.clearRect(0,0,MS,MS);mctx.fillStyle='#fff';
   for(const poly of FACE){mctx.beginPath();tracePoly(mctx,poly,U2M);mctx.closePath();mctx.fill()}
@@ -667,13 +692,13 @@ function goLight(){if(ui.light.disabled)return;stroke=null;buildDark();buildLit(
   state='light';st=0;shownPct=-1;stamped=false;lastTick=0;fxT=-1;gut=0;ui.bar.classList.add('off');ui.hint.classList.add('off');aimResult();
   if(mode==='quiz'){result=null;tier=null;prepareQuiz();return}
   judgeNow();tier=tierOf(result.score);prepareResult();
-  ui.sheet.dataset.tier=tier.k;ui.stamp.textContent=tier.stamp;ui.verdict.textContent=tier.say(SHAPES[shapeIdx].name);
+  ui.sheet.dataset.tier=tier.k;ui.stamp.textContent=tier.stamp;ui.verdict.textContent=tier.say(TG.name);
   ui.bar.classList.add('off');ui.hint.classList.add('off');ui.pct.textContent='0'}
-$('startBtn').onclick=()=>{Snd.init();mode='odai';setShape(Math.random()*SHAPES.length|0);goCarve()};
+$('startBtn').onclick=()=>{Snd.init();mode='odai';nextOdai();goCarve()};
 ui.light.onclick=()=>{Snd.init();goLight()};
 ui.undo.onclick=()=>{polys.pop();rebuildMask();syncButtons();wobV+=.8;Snd.crunch()};
 $('againBtn').onclick=()=>goCarve();
-$('nextBtn').onclick=()=>{setShape(shapeIdx+1);goCarve()};
+$('nextBtn').onclick=()=>{nextOdai();goCarve()};
 $('rHome').onclick=()=>toTitle();
 $('snd').onclick=e=>{Snd.init();Snd.on=!Snd.on;e.currentTarget.textContent=Snd.on?'音 ON':'音 OFF'};
 addEventListener('keydown',e=>{if(state!=='carve')return;if(e.key==='Enter')goLight();if(e.key==='z'||e.key==='Backspace')ui.undo.click()});
@@ -693,7 +718,7 @@ async function drawCard(){
   const seq=++cardSeq;
   try{await Promise.race([Promise.all(['700 44px "Kaisei Decol"','900 90px "Zen Maru Gothic"'].map(f=>document.fonts.load(f))),new Promise(r=>setTimeout(r,900))])}catch(e){}
   if(seq!==cardSeq||!result)return;
-  const g=kctx,sh=SHAPES[shapeIdx],col=TCOL[tier.k],W2=1200,H2=630,TB=528;
+  const g=kctx,sh=TG,col=TCOL[tier.k],W2=1200,H2=630,TB=528;
   g.setTransform(1,0,0,1,0,0);g.globalAlpha=1;g.globalCompositeOperation='source-over';g.shadowBlur=0;
   let gr=g.createLinearGradient(0,0,0,TB);gr.addColorStop(0,'#120E19');gr.addColorStop(1,'#241B2E');g.fillStyle=gr;g.fillRect(0,0,W2,TB);
   g.fillStyle=g.createPattern(wallTex,'repeat');g.fillRect(0,0,W2,TB);
@@ -729,7 +754,7 @@ async function drawCard(){
   R.img.src=card.toDataURL('image/jpeg',.9);
 }
 function prepareResult(){
-  const sh=SHAPES[shapeIdx],b=loadBest();bestPrev=b[sh.name]|0;
+  const sh=TG,b=loadBest();bestPrev=b[sh.name]|0;
   const up=result.score>bestPrev;if(up){b[sh.name]=result.score;saveBest(b)}
   R.el.dataset.tier=tier.k;R.q.textContent='お題　'+sh.name+'　'+result.score+'%';R.verdict.textContent=tier.say(sh.name);
   const f=Math.round(result.F*100),i=Math.round(result.iou*100);R.F.textContent=f+'%';R.I.textContent=i+'%';R.Fb.style.width=R.Ib.style.width='0';
@@ -768,6 +793,10 @@ const WL=[
   ['木',4],['花',4],['葉っぱ',4],['キノコ',4],['サボテン',4],['山',4],['雲',4],['太陽',4],['雷',4],['雨つぶ',4],['雪だるま',4],['手',4],['足あと',4],['矢印',4],['ダイヤ',4],
 ];
 const WORDS=WL.map(w=>w[0]),CAT_OF=WL.map(w=>w[1]);
+const ODAI=['黒猫','おばけ','こうもり','三日月','魔女の帽子','大鍋','ドクロ','キャンディ','星','お墓','カラス','オオカミ男','お城','フクロウ','ろうそく','カボチャ',
+  'ウサギ','イヌ','ネズミ','ゾウ','キリン','ヘビ','カエル','カメ','カタツムリ','魚','クジラ','タコ','カニ','鳥','ペンギン','チョウ','恐竜',
+  'リンゴ','バナナ','ブドウ','洋なし','さくらんぼ','おにぎり','ソフトクリーム','家','傘','ハート','鍵','王冠','ロケット','飛行機','電球','ベル','ギター','マグカップ','風船',
+  '木','キノコ','サボテン','雲','雷','雨つぶ','雪だるま','手','ダイヤ'].map(w=>WORDS.indexOf(w));
 const QZ={pick:$('pick'),share:$('qShare'),chips:$('chips'),img:$('qCard'),link:$('qLink'),ans:$('qAns'),x:$('qX'),copy:$('copyBtn')};
 const qs={el:$('qSheet'),choices:$('choices'),v:$('qsV'),end:$('qsEnd')};
 let mode='odai',quizAns=0,quizCh=[0,1,2,3],quizLink='',quizText='',guest=null,answered=false;
@@ -826,23 +855,30 @@ const EMO=['🐈','👻','🦇','🌙',null,'🧹','💀','🕷️','🍬','⭐'
   '🍎','🍌','🍇','🍓','🍐','🍒','🥕','🍙','🍦','🍩','🍰','🍳','🍔','🍕','🍮',
   '🏠','☂️','❤️','🔑','👑','🚀','🚗','✈️','🚢','💡','⏰','👓','🧤','👟','🔔','✂️','🎸','☕','🎈','🎀',
   '🌳','🌸','🍃','🍄','🌵','⛰️','☁️','☀️','⚡','💧','⛄','✋','👣','➡️','💎'];
+// 語のシルエット（白い形、[-1,1] の四角に ±0.85 で収める）。お題モードの的と、当てモードの見本の両方で使う
+const SIL={};
+function silhouette(i){if(i in SIL)return SIL[i];
+  const sh=shapeOf(i),emo=EMO[i];if(!sh&&!emo)return SIL[i]=null;
+  const S=200,sc=mk(S,S),sx=sc.getContext('2d',{willReadFrequently:true});
+  if(sh){sx.setTransform(S/2*.9,0,0,S/2*.9,S/2,S/2);sx.fillStyle='#fff';fillShape(sx,sh);sx.setTransform(1,0,0,1,0,0)}
+  else{sx.font=`${S*.78}px ${EMOJI_FONT}`;sx.textAlign='center';sx.textBaseline='middle';sx.fillText(emo,S/2,S*.53)}
+  const d=sx.getImageData(0,0,S,S).data;let x0=S,y0=S,x1=0,y1=0,n=0;
+  for(let y=0;y<S;y++)for(let x=0;x<S;x++)if(d[(y*S+x)*4+3]>90){n++;if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y}
+  if(n<S*S*.03)return SIL[i]=null;                               // 絵文字が出せない端末
+  const im=sx.createImageData(S,S);for(let k=0;k<S*S;k++)if(d[k*4+3]>90){im.data[k*4]=im.data[k*4+1]=im.data[k*4+2]=255;im.data[k*4+3]=255}
+  sx.putImageData(im,0,0);
+  const out=mk(S,S),ox=out.getContext('2d'),half=Math.max(x1-x0,y1-y0)/2/.85,k=S/2/half;
+  ox.setTransform(k,0,0,k,S/2-(x0+x1)/2*k,S/2-(y0+y1)/2*k);ox.drawImage(sc,0,0);return SIL[i]=out}
 /* ガイド線：答えの形を、かぼちゃの丸みのぶん先にゆがめて、彫る面に描く。この線をなぞると壁の影がその形になる。
    作り方：絵文字を描いて形（不透明な所）を取り、彫る面の各点を「壁のどこに映るか」へ逆算して、形の内外を調べる。ふちだけ残す */
 const GS=160,guideCv=mk(GS,GS),gctx=guideCv.getContext('2d');let hasGuide=false,cardPk=null;
 function wallOf(pu,pv){const a=pu,b=(pv-.02)/.95,m=Math.hypot(a,b);if(m<1e-6)return[0,0];
   let r=m;for(let i=0;i<8;i++){r-=(r*(1+KBAR*r*r)/(1+KBAR)-m)/((1+3*KBAR*r*r)/(1+KBAR))}   // m = r·f(r) をニュートン法で解く
   return[a/m*r*E,b/m*r*E]}
-function makeGuide(i){hasGuide=false;gctx.clearRect(0,0,GS,GS);const sh=shapeOf(i),emo=EMO[i];if(!sh&&!emo)return;
-  const S=200,sc=mk(S,S),sx=sc.getContext('2d',{willReadFrequently:true});
-  if(sh){sx.setTransform(S/2*.9,0,0,S/2*.9,S/2,S/2);sx.fillStyle='#fff';fillShape(sx,sh);sx.setTransform(1,0,0,1,0,0)}
-  else{sx.font=`${S*.78}px ${EMOJI_FONT}`;sx.textAlign='center';sx.textBaseline='middle';sx.fillText(emo,S/2,S*.53)}
-  const d=sx.getImageData(0,0,S,S).data;let x0=S,y0=S,x1=0,y1=0,n=0;
-  for(let y=0;y<S;y++)for(let x=0;x<S;x++)if(d[(y*S+x)*4+3]>90){n++;if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y}
-  if(n<S*S*.03)return;                                         // 絵文字が出せない端末では、ガイドを出さない
-  const cx=(x0+x1)/2,cy=(y0+y1)/2,half=Math.max(x1-x0,y1-y0)/2/.85;   // 形を、お題と同じ大きさ（±0.85）にそろえる
-  const inside=new Uint8Array(GS*GS);
+function makeGuide(wi){hasGuide=false;gctx.clearRect(0,0,GS,GS);const sil=silhouette(wi);if(!sil)return;
+  const S=sil.width,d=sil.getContext('2d').getImageData(0,0,S,S).data,inside=new Uint8Array(GS*GS);
   for(let j=0;j<GS;j++)for(let i=0;i<GS;i++){const[wu,wv]=wallOf((i+.5)/GS*2-1,(j+.5)/GS*2-1);
-    const px=Math.round(cx+wu*half),py=Math.round(cy+wv*half);inside[j*GS+i]=px>=0&&px<S&&py>=0&&py<S&&d[(py*S+px)*4+3]>90}
+    const px=Math.round((wu+1)/2*S),py=Math.round((wv+1)/2*S);inside[j*GS+i]=px>=0&&px<S&&py>=0&&py<S&&d[(py*S+px)*4+3]>127}
   const im=gctx.createImageData(GS,GS),o=im.data;
   for(let j=0;j<GS;j++)for(let i=0;i<GS;i++){const k=j*GS+i;
     if(inside[k]&&inBody((i+.5)/GS*2-1,(j+.5)/GS*2-1)){o[k*4]=255;o[k*4+1]=230;o[k*4+2]=160;o[k*4+3]=255}}
@@ -966,7 +1002,7 @@ $('svReplay').onclick=()=>{replay=true;startGuess();st=3;V.dark=.88;V.lit=1;V.pr
 $('svMake').onclick=()=>{toTitle();openPick()};
 $('svSkip').onclick=()=>{guest=null;titleButtons()};
 $('skipGuest').onclick=()=>{guest=null;titleButtons()};
-$('qsPlay').onclick=()=>{qs.el.classList.remove('on');mode='odai';setShape(Math.random()*SHAPES.length|0);goCarve()};
+$('qsPlay').onclick=()=>{qs.el.classList.remove('on');mode='odai';nextOdai();goCarve()};
 $('qsMake').onclick=()=>{qs.el.classList.remove('on');toTitle();openPick()};
 function titleButtons(){const g=!!guest,done=g&&!!guestRec;$('modes').hidden=g;$('guestBtns').hidden=!g||done;$('solvedBtns').hidden=!done;
   $('tMsg').innerHTML=done?`このクイズは解答済みです。<br>${guestRec.ok?'正解！　':''}あなたの答え：${WORDS[guestRec.pick]}`
