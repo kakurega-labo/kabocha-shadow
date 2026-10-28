@@ -38,11 +38,11 @@
   --body:"Zen Maru Gothic","Hiragino Maru Gothic ProN","Hiragino Sans","Yu Gothic",sans-serif;
   color-scheme:dark;
 }
-*,*::before,*::after{box-sizing:border-box}
+*,*::before,*::after{box-sizing:border-box;touch-action:manipulation}
 [hidden]{display:none!important}
 html,body{height:100%}
 body{background:var(--night);color:var(--ink);font-family:var(--body);overflow:hidden;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
-#c{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+#c{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;-webkit-touch-callout:none}
 .top{position:fixed;top:calc(env(safe-area-inset-top,0px) + 12px);left:max(16px,env(safe-area-inset-left,0px));right:max(16px,env(safe-area-inset-right,0px));display:flex;justify-content:space-between;align-items:flex-start;gap:12px;pointer-events:none}
 .card{display:flex;gap:10px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:7px 14px 7px 7px;transition:opacity .4s,transform .5s cubic-bezier(.2,.9,.25,1.15)}
 .card canvas{width:48px;height:48px;border-radius:10px;background:rgba(0,0,0,.35)}
@@ -397,7 +397,8 @@ const LOBES=[-.6,.6,-.3,.3,0].map(o=>({o,rx:o===0?.5:Math.abs(o)<.5?.47:.42,ry:.
 const RF=1.06;   // 彫り跡の画像が覆う範囲（かぼちゃの半径に対する半幅）
 const E=1.35;    // 壁の画像が覆う範囲（お題の大きさを 1 として）
 function layout(){
-  DPR=Math.min(2,devicePixelRatio||1);W=innerWidth;H=innerHeight;
+  // 画面の大きさは window ではなくキャンバスの実寸で測る（スマホでアドレスバーが縮むと innerHeight とずれるため）
+  const rc=cv.getBoundingClientRect();DPR=Math.min(2,devicePixelRatio||1);W=rc.width||innerWidth;H=rc.height||innerHeight;
   cv.width=Math.round(W*DPR);cv.height=Math.round(H*DPR);
   const pr=Math.min(W*.34,H*.19);
   Object.assign(L,{pr,px:W/2,py:H*.74,rf:pr*RF,wx:W/2,wy:H*.31,rw:Math.min(W*.3,H*.15)});
@@ -593,15 +594,32 @@ function popPiece(pts){
 }
 
 /* ---------- 入力 ---------- */
-const toWorld=(sx,sy)=>[(sx-cam.ax)/cam.s+cam.fx,(sy-cam.ay)/cam.s+cam.fy];
-const toFace=(sx,sy)=>{const[x,y]=toWorld(sx,sy);return[(x-L.fx)/L.rf,(y-L.fy)/L.rf]};
+// 指の位置 → かぼちゃの座標。描くときに掛けている「画面の振動」と「かぼちゃのぷるん」も逆に戻すので、
+// 見えている場所と彫れる場所が一致する
+const view={sh:0,ws:1};
+const toWorld=(cx,cy)=>{const r=cv.getBoundingClientRect(),sx=(cx-r.left)*W/r.width,sy=(cy-r.top)*H/r.height;
+  return[(sx-view.sh-cam.ax)/cam.s+cam.fx,(sy-cam.ay)/cam.s+cam.fy]};
+const toFace=(cx,cy)=>{let[x,y]=toWorld(cx,cy);const by=L.py+L.pr*.86;
+  x=L.px+(x-L.px)/(1+view.ws*.07);y=by+(y-by)/(1-view.ws*.07);return[(x-L.fx)/L.rf,(y-L.fy)/L.rf]};
+// 手ぶれ取り（One Euro フィルタ）：ゆっくりのときはよく丸め、速いときはほぼそのまま追う。遅れを最小にする
+const Euro={t:-1,x:0,y:0,dx:0,dy:0,
+  reset(p,t){Object.assign(this,{t,x:p[0],y:p[1],dx:0,dy:0})},
+  step(p,t){const dt=Math.max(.001,(t-this.t)/1000);this.t=t;const al=fc=>{const r=2*Math.PI*fc*dt;return r/(r+1)};
+    const ad=al(1);this.dx+=ad*((p[0]-this.x)/dt-this.dx);this.dy+=ad*((p[1]-this.y)/dt-this.dy);
+    const a=al(3+1.5*Math.hypot(this.dx,this.dy));this.x+=a*(p[0]-this.x);this.y+=a*(p[1]-this.y);return[this.x,this.y]}};
+let lastCrunch=0;
+function feed(e){const p=toFace(e.clientX,e.clientY),nb=Euro.step(p,e.timeStamp);stroke.b=nb;stroke.t=p;
+  const last=stroke.pts[stroke.pts.length-1],d=Math.hypot(nb[0]-last[0],nb[1]-last[1]);
+  if(d>.008){stroke.pts.push(nb);stroke.len+=d;
+    if(onSkin(nb[0],nb[1])){if(e.timeStamp-lastCrunch>60){lastCrunch=e.timeStamp;Snd.crunch()}chip(L.fx+nb[0]*L.rf,L.fy+nb[1]*L.rf,1+(Math.random()<d*20))}}}
 cv.addEventListener('pointerdown',e=>{Snd.init();if(state==='light'&&mode==='odai'&&stamped){openResult();return}
   if(state==='light'&&mode==='quiz'&&st>2.4){openQuizShare();return}
   if(state==='title'){const[u,v]=toFace(e.clientX,e.clientY);if(Math.hypot(u,v*1.15)<1){wobV-=3.2;flV=1.5;Snd.boing();emit(10)}return}
   if(state!=='carve'||stroke)return;
-  const p=toFace(e.clientX,e.clientY);stroke={id:e.pointerId,pts:[p],b:p,t:p,len:0};cv.setPointerCapture(e.pointerId);
+  const p=toFace(e.clientX,e.clientY);stroke={id:e.pointerId,pts:[p],b:p,t:p,len:0};Euro.reset(p,e.timeStamp);cv.setPointerCapture(e.pointerId);
   if(onSkin(p[0],p[1])){wobV-=.6;Snd.crunch()}});
-cv.addEventListener('pointermove',e=>{if(stroke&&e.pointerId===stroke.id)stroke.t=toFace(e.clientX,e.clientY)});
+cv.addEventListener('pointermove',e=>{if(!stroke||e.pointerId!==stroke.id)return;
+  const list=e.getCoalescedEvents?e.getCoalescedEvents():null;if(list&&list.length)for(const c of list)feed(c);else feed(e)});
 const endStroke=e=>{if(!stroke||e.pointerId!==stroke.id)return;const s=stroke;stroke=null;
   s.pts.push(s.t);if(s.len<.05||s.pts.length<3)return;
   let a=0;for(let i=0,n=s.pts.length;i<n;i++){const p=s.pts[i],q=s.pts[(i+1)%n];a+=p[0]*q[1]-q[0]*p[1]}
@@ -924,12 +942,6 @@ function update(dt){
     if(tier.k==='D')gut=Math.sin(Math.PI*seg(fxT,0,1.4))**.6*.75;   // ろうそくが風で消えかけて戻る
   }
 
-  // なぞる刃先：指へ滑らかに追いつかせ、手ぶれを丸める
-  if(stroke){const b=stroke.b,t=stroke.t,kk=1-Math.exp(-30*dt),nb=[b[0]+(t[0]-b[0])*kk,b[1]+(t[1]-b[1])*kk];stroke.b=nb;
-    const last=stroke.pts[stroke.pts.length-1],d=Math.hypot(nb[0]-last[0],nb[1]-last[1]);
-    if(d>.012){stroke.pts.push(nb);stroke.len+=d;
-      if(onSkin(nb[0],nb[1])){crunchCD-=dt;if(crunchCD<=0){crunchCD=.06;Snd.crunch()}chip(L.fx+nb[0]*L.rf,L.fy+nb[1]*L.rf,1+(Math.random()<d*20))}}}
-  crunchCD=Math.max(0,crunchCD-dt*.5);
 
   const g=1400/Math.max(.6,cam.s);
   for(const p of CH){if(p.t>=1)continue;p.t+=dt*1.6;p.vy+=g*dt;p.x+=p.vx*dt;p.y+=p.vy*dt}
@@ -943,7 +955,7 @@ function update(dt){
 }
 
 /* ---------- 描画 ---------- */
-function withWob(fn){const by=L.py+L.pr*.86,br=state==='title'?.025*Math.sin(time*2.2):0,w=wob+br;
+function withWob(fn){const by=L.py+L.pr*.86,br=state==='title'?.025*Math.sin(time*2.2):0,w=wob+br;view.ws=w;
   ctx.save();ctx.translate(L.px,by);ctx.scale(1+w*.07,1-w*.07);ctx.translate(-L.px,-by);fn();ctx.restore()}
 function drawBat(x,y,s,ph){const f=Math.sin(ph)*.6;ctx.beginPath();
   ctx.moveTo(x,y-s*.2);ctx.quadraticCurveTo(x-s*.6,y-s*(.9+f),x-s*1.4,y-s*(.3+f*1.4));ctx.quadraticCurveTo(x-s*.9,y-s*.1,x-s*.7,y+s*.15);
@@ -951,7 +963,7 @@ function drawBat(x,y,s,ph){const f=Math.sin(ph)*.6;ctx.beginPath();
   ctx.quadraticCurveTo(x+s*.6,y-s*(.9+f),x,y-s*.2);ctx.fill()}
 function render(){
   const fl=(flV+.03*Math.sin(time*13.1)+.02*Math.sin(time*23.7))*(1-gut);
-  const sh=reduce?0:shakeA*Math.exp(-shakeT*14)*Math.sin(shakeT*70);
+  const sh=reduce?0:shakeA*Math.exp(-shakeT*14)*Math.sin(shakeT*70);view.sh=sh;
   ctx.setTransform(DPR,0,0,DPR,0,0);ctx.fillStyle='#120E19';ctx.fillRect(0,0,W,H);
   const s=cam.s;ctx.setTransform(DPR*s,0,0,DPR*s,DPR*(cam.ax-cam.fx*s+sh),DPR*(cam.ay-cam.fy*s));
 
@@ -1038,7 +1050,10 @@ let prev=performance.now();
 function frame(now){requestAnimationFrame(frame);const dt=Math.min(.05,(now-prev)/1000);prev=now;
   if(resOpen)return;                  // 結果画面は独立した画面：裏のゲームは描かない
   try{update(dt);render()}catch(e){console.error(e)}}
-addEventListener('resize',()=>{layout();wallPat=null;Object.assign(cam,state==='carve'?L.camCarve:state==='title'?L.camTitle:L.camShow)});
+let relayQ=0;const relayout=()=>{if(relayQ)return;relayQ=requestAnimationFrame(()=>{relayQ=0;layout();wallPat=null;Object.assign(cam,state==='carve'?L.camCarve:state==='title'?L.camTitle:L.camShow)})};
+addEventListener('resize',relayout);
+if(window.ResizeObserver)new ResizeObserver(relayout).observe(cv);
+if(window.visualViewport)visualViewport.addEventListener('resize',relayout);
 guest=decodeQuiz(location.hash);titleButtons();
 layout();Object.assign(cam,L.camTitle);goTitle();requestAnimationFrame(frame);
 })();
