@@ -175,7 +175,10 @@ body{background:var(--night);color:var(--ink);font-family:var(--body);overflow:h
 @keyframes shake{20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}
 .qVerdict{font:700 22px/1.35 var(--display);text-align:center;color:var(--tc)}
 .qVerdict small{display:block;font:500 13px var(--body);color:var(--dim);margin-top:2px}
-.qsEnd{width:min(480px,100%);margin-top:6px}
+.qsEnd{display:flex;flex-direction:column;gap:10px;width:min(480px,100%);margin-top:6px}
+.qsEnd>.btn{width:100%}
+a.btn{display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
+.linkRow{display:flex;justify-content:center;gap:20px}
 @media (prefers-reduced-motion:reduce){*{transition-duration:.01s!important;animation-duration:.01s!important}}
 </style>
 </head>
@@ -200,6 +203,11 @@ body{background:var(--night);color:var(--ink);font-family:var(--body);overflow:h
     <button class="btn fire mode" id="guessBtn" type="button"><b>ろうそくを灯す</b><small>壁に映る影を見て、4択で当てる</small></button>
     <button class="linkish" id="skipGuest" type="button">自分で遊ぶ</button>
   </div>
+  <div class="modes" id="solvedBtns" hidden>
+    <button class="btn fire mode" id="svMake" type="button"><b>自分も出題する</b><small>影絵クイズを作って、誰かに当ててもらう</small></button>
+    <a class="btn mode findLink" href="https://x.com/search?q=%23%E3%81%8B%E3%81%BC%E3%81%A1%E3%82%83%E3%81%AE%E5%BD%B1%E7%B5%B5&amp;f=live" target="_blank" rel="noopener"><b>ほかのクイズを探す</b><small>X で #かぼちゃの影絵 を見る</small></a>
+    <div class="linkRow"><button class="linkish" id="svReplay" type="button">影をもう一度見る</button><button class="linkish" id="svSkip" type="button">自分で遊ぶ</button></div>
+  </div>
 </div>
 
 <div class="hint off" id="hint">かぼちゃのどこでも、ぐるっとなぞるとくり抜けます</div>
@@ -223,9 +231,12 @@ body{background:var(--night);color:var(--ink);font-family:var(--body);overflow:h
   <div class="q">この影、何に見える？</div>
   <div class="choices" id="choices"></div>
   <div class="qVerdict" id="qsV" hidden></div>
-  <div class="rRow qsEnd" id="qsEnd" hidden>
-    <button class="btn" id="qsPlay" type="button">お題モードで遊ぶ</button>
+  <div class="qsEnd" id="qsEnd" hidden>
     <button class="btn fire" id="qsMake" type="button">自分も出題する</button>
+    <div class="rRow">
+      <a class="btn findLink" href="https://x.com/search?q=%23%E3%81%8B%E3%81%BC%E3%81%A1%E3%82%83%E3%81%AE%E5%BD%B1%E7%B5%B5&amp;f=live" target="_blank" rel="noopener">ほかのクイズを探す</a>
+      <button class="btn" id="qsPlay" type="button">お題モードで遊ぶ</button>
+    </div>
   </div>
 </div>
 
@@ -415,7 +426,7 @@ function layout(){
   L.camResult={fx:L.wx,fy:L.wy,ax:W/2,ay:top+avail/2,s:clamp(avail/(2*L.rw*E*1.05),.8,1.5)};
   const gav=H-(qs.el.offsetHeight||230)-top;                 // 当てる側：4択の上に影
   L.camGuess={fx:L.wx,fy:L.wy,ax:W/2,ay:top+gav/2,s:clamp(gav/(2*L.rw*E*1.05),.7,1.4)};
-  const rav=H-340-top,y0=L.wy-L.rw*1.2,y1=L.py+L.pr*.95;    // 答えたあと：影とかぼちゃを両方見せる
+  const rav=H-(qs.el.offsetHeight||340)-top,y0=L.wy-L.rw*1.2,y1=L.py+L.pr*.95;    // 答えたあと：影とかぼちゃを両方見せる
   L.camReveal={fx:W/2,fy:(y0+y1)/2,ax:W/2,ay:top+rav/2,s:clamp(rav/(y1-y0),.45,1.1)};
   // かぼちゃは配置が変わったときだけ1枚の絵に焼く。毎フレームは drawImage 1回で済み、
   // 灯りで半透明に重ねても房の重なりが透けない
@@ -878,25 +889,38 @@ async function drawQuizCard(){const seq=++cardSeq;
   QZ.img.src=qcard.toDataURL('image/jpeg',.9)}
 
 // 受け取った人
+// 答えたクイズを、その端末に記録する（リンクの # の中身で見分ける。古いものから捨てて最大300件）
+const SOLVED_KEY='kagee-solved-v1';
+const loadSolved=()=>{try{return JSON.parse(localStorage.getItem(SOLVED_KEY))||{}}catch(e){return{}}};
+function saveSolved(id,rec){try{const m=loadSolved();m[id]=rec;const ks=Object.keys(m);
+  if(ks.length>300)ks.sort((a,b)=>m[a].t-m[b].t).slice(0,ks.length-300).forEach(k=>delete m[k]);localStorage.setItem(SOLVED_KEY,JSON.stringify(m))}catch(e){}}
+let guestId='',guestRec=null,replay=false;
 function startGuess(){Snd.init();mode='guess';polys=guest.polys.map(p=>({pts:p.pts,fill:p.fill}));rebuildMask();buildDark();buildLit();computeProjection();
   state='guess';st=0;answered=false;V.face=0;fxT=-1;gut=0;tier=null;result=null;aimResult();
   ui.tHead.classList.add('off');ui.tFoot.classList.add('off');cardQuiz('影絵クイズ','何に見える？');ui.card.classList.remove('off');
   qs.v.hidden=qs.end.hidden=true;qs.choices.innerHTML='';
   guest.ch.forEach((c,i)=>{const b=document.createElement('button');b.type='button';b.className='choice';b.innerHTML=`<i>${'ABCD'[i]}</i>${WORDS[c]}`;
-    b.onclick=()=>answer(c,b);qs.choices.appendChild(b)});requestAnimationFrame(fitChoices)}
+    b.onclick=()=>answer(c,b);qs.choices.appendChild(b)});requestAnimationFrame(fitChoices);
+  if(replay)for(const b of qs.choices.children)b.disabled=true}
 function answer(c,btn){if(answered)return;answered=true;const ok=c===guest.ans;
+  if(!replay){guestRec={ok,pick:c,t:Date.now()};saveSolved(guestId,guestRec)}
   for(const b of qs.choices.children){b.disabled=true;if(b!==btn)b.classList.add('dim')}
   [...qs.choices.children][guest.ch.indexOf(guest.ans)].classList.remove('dim');[...qs.choices.children][guest.ch.indexOf(guest.ans)].classList.add('right');
   if(!ok)btn.classList.add('miss');
   tier=ok?TIERS[0]:TIERS[4];qs.el.dataset.tier=tier.k;startTierFx();Snd.tier(tier.k);if(ok){shakeT=0;shakeA=6}
-  qs.v.innerHTML=ok?`正解！ ${WORDS[guest.ans]}でした<small>かぼちゃの表がこちら</small>`:`ざんねん！ 正解は${WORDS[guest.ans]}<small>かぼちゃの表を見てみると…</small>`;
+  const sub=replay?`あなたの答え：${WORDS[c]}`:ok?'かぼちゃの表がこちら':'かぼちゃの表を見てみると…';
+  qs.v.innerHTML=(ok?`正解！ ${WORDS[guest.ans]}でした`:`ざんねん！ 正解は${WORDS[guest.ans]}`)+`<small>${sub}</small>`;
   qs.v.hidden=false;setTimeout(()=>{qs.end.hidden=false;layout()},500)}
-$('guessBtn').onclick=startGuess;
+$('guessBtn').onclick=()=>{replay=false;startGuess()};
+$('svReplay').onclick=()=>{replay=true;startGuess()};
+$('svMake').onclick=()=>{toTitle();openPick()};
+$('svSkip').onclick=()=>{guest=null;titleButtons()};
 $('skipGuest').onclick=()=>{guest=null;titleButtons()};
 $('qsPlay').onclick=()=>{qs.el.classList.remove('on');mode='odai';setShape(Math.random()*SHAPES.length|0);goCarve()};
 $('qsMake').onclick=()=>{qs.el.classList.remove('on');toTitle();openPick()};
-function titleButtons(){const g=!!guest;$('modes').hidden=g;$('guestBtns').hidden=!g;
-  $('tMsg').innerHTML=g?'影絵クイズが届きました。<br>ろうそくを灯して、壁に映った影を当ててください。':'かぼちゃを彫って、ろうそくを灯す。<br>壁に映った影は、何の形に見えるか。'}
+function titleButtons(){const g=!!guest,done=g&&!!guestRec;$('modes').hidden=g;$('guestBtns').hidden=!g||done;$('solvedBtns').hidden=!done;
+  $('tMsg').innerHTML=done?`このクイズは解答済みです。<br>${guestRec.ok?'正解！　':''}あなたの答え：${WORDS[guestRec.pick]}`
+    :g?'影絵クイズが届きました。<br>ろうそくを灯して、壁に映った影を当ててください。':'かぼちゃを彫って、ろうそくを灯す。<br>壁に映った影は、何の形に見えるか。'}
 function toTitle(){closeResult();qs.el.classList.remove('on');mode='odai';guest=null;titleButtons();polys=[];tier=null;fxT=-1;gut=0;result=null;stroke=null;
   for(const el of[ui.card,ui.bar,ui.hint])el.classList.add('off');ui.sheet.classList.remove('on');
   ui.tHead.classList.remove('off');ui.tFoot.classList.remove('off');goTitle()}
@@ -928,7 +952,7 @@ function update(dt){
     if(st-dt<1.25&&st>=1.25)Snd.bloom();
     // 当てる側はタイトルの時点でもう暗い部屋にいる。「灯す」を押したら、明るく戻さず 0.18 秒でそのまま暗転（顔も灯りと一緒に消える）
     if(state==='guess'){const out=eOutC(seg(st,0,.18));V.dark=Math.max(V.dark,.88*out);if(st<.85)V.lit=1-out;
-      V.line=V.miss=0;if(st>=2.7&&!qs.el.classList.contains('on'))qs.el.classList.add('on');V.face=answered?damp(V.face,1,2.4,dt):1-out}
+      V.line=V.miss=0;if(st>=2.7&&!qs.el.classList.contains('on')){qs.el.classList.add('on');if(replay&&guestRec)setTimeout(()=>{if(state==='guess'&&!answered)answer(guestRec.pick,[...qs.choices.children][guest.ch.indexOf(guestRec.pick)])},700)}V.face=answered?damp(V.face,1,2.4,dt):1-out}
     else if(mode==='quiz'){V.line=V.miss=0;if(st>=3.6)openQuizShare()}
     else{V.line=eOutC(seg(st,2.3,2.9));V.miss=eOutC(seg(st,4.3,4.9))}
     if(state==='light'&&mode==='odai'&&st>=2.6){ui.sheet.classList.add('on');
@@ -1063,7 +1087,7 @@ let relayQ=0;const relayout=()=>{if(relayQ)return;relayQ=requestAnimationFrame((
 addEventListener('resize',relayout);
 if(window.ResizeObserver)new ResizeObserver(relayout).observe(cv);
 if(window.visualViewport)visualViewport.addEventListener('resize',relayout);
-guest=decodeQuiz(location.hash);titleButtons();
+guest=decodeQuiz(location.hash);if(guest){guestId=location.hash.slice(2);guestRec=loadSolved()[guestId]||null}titleButtons();
 layout();Object.assign(cam,L.camTitle);goTitle();requestAnimationFrame(frame);
 })();
 </script>
