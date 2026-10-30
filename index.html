@@ -181,6 +181,18 @@ body{background:var(--night);color:var(--ink);font-family:var(--body);overflow:h
 .qVerdict small{display:block;font:500 13px var(--body);color:var(--dim);margin-top:2px}
 .qsEnd{display:flex;flex-direction:column;gap:10px;width:min(480px,100%);margin-top:6px}
 .qsEnd>.btn{width:100%}
+/* 答えたあとに出る2段（正解/ざんねん → 出口のボタン）。高さ 0 から中身の高さまで伸ばすので、帯は下からなめらかにせり上がる */
+.grow{display:grid;grid-template-rows:0fr;width:min(480px,100%);margin-top:-6px;opacity:0;transform:translateY(10px);
+  transition:grid-template-rows .55s cubic-bezier(.22,1,.36,1),margin-top .55s cubic-bezier(.22,1,.36,1),opacity .4s ease-out .08s,transform .55s cubic-bezier(.22,1,.36,1) .04s}
+.grow>div{overflow:hidden;min-height:0;display:flex;flex-direction:column;align-items:center}
+.grow.on{grid-template-rows:1fr;margin-top:0;opacity:1;transform:none}
+.grow .qsEnd>*{opacity:0;transform:translateY(12px) scale(.97);transition:opacity .35s ease-out,transform .5s cubic-bezier(.34,1.4,.64,1)}
+.grow.on .qsEnd>*{opacity:1;transform:none}
+.grow.on .qsEnd>:nth-child(1){transition-delay:.12s}
+.grow.on .qsEnd>:nth-child(2){transition-delay:.2s}
+.grow .qVerdict{transform:scale(.9);transition:transform .5s cubic-bezier(.34,1.56,.64,1) .05s}
+.grow.on .qVerdict{transform:none}
+.instant,.instant *{transition:none!important}
 a.btn{display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
 .linkRow{display:flex;justify-content:center;gap:20px}
 @media (prefers-reduced-motion:reduce){*{transition-duration:.01s!important;animation-duration:.01s!important}}
@@ -234,14 +246,14 @@ a.btn{display:inline-flex;align-items:center;justify-content:center;text-decorat
 <div class="sheet" id="qSheet" data-tier="S">
   <div class="q">この影、何に見える？</div>
   <div class="choices" id="choices"></div>
-  <div class="qVerdict" id="qsV" hidden></div>
-  <div class="qsEnd" id="qsEnd" hidden>
+  <div class="grow" id="qsVw" inert><div><div class="qVerdict" id="qsV"></div></div></div>
+  <div class="grow" id="qsEw" inert><div><div class="qsEnd" id="qsEnd">
     <button class="btn fire" id="qsMake" type="button">自分も出題する</button>
     <div class="rRow">
       <a class="btn findLink" href="https://x.com/search?q=%23%E3%81%8B%E3%81%BC%E3%81%A1%E3%82%83%E3%81%AE%E5%BD%B1%E7%B5%B5&amp;f=live" target="_blank" rel="noopener">ほかのクイズを探す</a>
       <button class="btn" id="qsPlay" type="button">お題モードで遊ぶ</button>
     </div>
-  </div>
+  </div></div></div>
 </div>
 
 <section class="result" id="pick" aria-label="答えを選ぶ" inert>
@@ -428,15 +440,18 @@ function layout(){
   L.camShow={fx:W/2,fy:H*.5,ax:W/2,ay:H*.5,s:1};
   const top=70,avail=H-(ui.sheet.offsetHeight||250)-top;     // 結果：壁の影絵をシートの上に大きく
   L.camResult={fx:L.wx,fy:L.wy,ax:W/2,ay:top+avail/2,s:clamp(avail/(2*L.rw*E*1.05),.8,1.5)};
-  const gav=H-(qs.el.offsetHeight||230)-top;                 // 当てる側：4択の上に影
-  L.camGuess={fx:L.wx,fy:L.wy,ax:W/2,ay:top+gav/2,s:clamp(gav/(2*L.rw*E*1.05),.7,1.4)};
-  const rav=H-(qs.el.offsetHeight||340)-top,y0=L.wy-L.rw*1.2,y1=L.py+L.pr*.95;    // 答えたあと：影とかぼちゃを両方見せる
-  L.camReveal={fx:W/2,fy:(y0+y1)/2,ax:W/2,ay:top+rav/2,s:clamp(rav/(y1-y0),.45,1.1)};
+  L.camGuess={fx:L.wx,fy:L.wy,ax:W/2,ay:H/2,s:1};L.camReveal={fx:W/2,fy:H/2,ax:W/2,ay:H/2,s:1};aimGuess();
   // かぼちゃは配置が変わったときだけ1枚の絵に焼く。毎フレームは drawImage 1回で済み、
   // 灯りで半透明に重ねても房の重なりが透けない
   L.sprite=makePumpkin(pr,DPR*Math.max(L.camCarve.s,L.camTitle.s));
   aimResult();
 }
+// 当てる側のカメラ：4択の帯の「今の」高さから、残りの空きに影（答えたあとは影とかぼちゃ）を収める。
+// 帯が伸びている間も毎フレーム測り直すので、カメラは帯に押し上げられるように一緒に動く（数値だけ書き換え、オブジェクトは作らない）
+const SH_TOP=70;
+function aimGuess(){const h=qs.el.getBoundingClientRect().height,g=L.camGuess,r=L.camReveal;
+  const gav=H-(h||230)-SH_TOP;g.ay=SH_TOP+gav/2;g.s=clamp(gav/(2*L.rw*E*1.05),.7,1.4);
+  const rav=H-(h||340)-SH_TOP,y0=L.wy-L.rw*1.2,y1=L.py+L.pr*.95;r.fy=(y0+y1)/2;r.ay=SH_TOP+rav/2;r.s=clamp(rav/(y1-y0),.45,1.1)}
 function makePumpkin(pr,sc){
   const c=mk(Math.ceil(2.2*pr*sc),Math.ceil(2.12*pr*sc)),g=c.getContext('2d');g.scale(sc,sc);g.translate(1.1*pr,1.18*pr);
   for(const b of LOBES){const x=b.o*pr,rx=pr*b.rx,ry=pr*b.ry,gr=g.createRadialGradient(x-rx*.35,-ry*.45,rx*.1,x,0,rx*1.25);
@@ -1024,7 +1039,7 @@ let guestId='',guestRec=null,replay=false;
 function startGuess(){Snd.init();mode='guess';polys=guest.polys.map(p=>({pts:p.pts,fill:p.fill}));rebuildMask();buildDark();buildLit();computeProjection();
   state='guess';st=0;answered=false;V.face=0;fxT=-1;gut=0;tier=null;result=null;aimResult();
   ui.tHead.classList.add('off');ui.tFoot.classList.add('off');cardQuiz('影絵クイズ','何に見える？');ui.card.classList.remove('off');
-  qs.v.hidden=qs.end.hidden=true;qs.choices.innerHTML='';
+  grow($('qsVw'),false);grow($('qsEw'),false);qs.choices.innerHTML='';
   guest.ch.forEach((c,i)=>{const b=document.createElement('button');b.type='button';b.className='choice';b.innerHTML=`<i>${'ABCD'[i]}</i>${WORDS[c]}`;
     b.onclick=()=>answer(c,b);qs.choices.appendChild(b)});requestAnimationFrame(fitChoices);
   if(replay)for(const b of qs.choices.children)b.disabled=true}
@@ -1036,11 +1051,14 @@ function answer(c,btn){if(answered)return;answered=true;const ok=c===guest.ans;
   tier=ok?TIERS[0]:TIERS[4];qs.el.dataset.tier=tier.k;if(!replay){startTierFx();Snd.tier(tier.k);if(ok){shakeT=0;shakeA=6}}
   const sub=replay?`あなたの答え：${WORDS[c]}`:ok?'かぼちゃの表がこちら':'かぼちゃの表を見てみると…';
   qs.v.innerHTML=(ok?`正解！ ${WORDS[guest.ans]}でした`:`ざんねん！ 正解は${WORDS[guest.ans]}`)+`<small>${sub}</small>`;
-  qs.v.hidden=false;if(replay){qs.end.hidden=false;layout();return}setTimeout(()=>{qs.end.hidden=false;layout()},500)}
+  grow($('qsVw'),true);if(replay){grow($('qsEw'),true);return}clearTimeout(growT);growT=setTimeout(()=>{if(answered&&state==='guess')grow($('qsEw'),true)},650)}
+// 段を開け閉めする（閉じている間は押せない・フォーカスも来ない）
+let growT=0;const grow=(el,on)=>{el.classList.toggle('on',on);el.inert=!on};
 $('guessBtn').onclick=()=>{replay=false;startGuess()};
 // 影をもう一度見る：最初から再生し直さず、答え合わせが終わった画面（灯ったかぼちゃ＋壁の影＋前回の答え＋出口）をすぐ出す
 $('svReplay').onclick=()=>{replay=true;startGuess();st=3;V.dark=.88;V.lit=1;V.proj=1;V.face=1;
-  qs.el.classList.add('on');answer(guestRec.pick,[...qs.choices.children][guest.ch.indexOf(guestRec.pick)]);Object.assign(cam,L.camReveal)};
+  qs.el.classList.add('instant','on');answer(guestRec.pick,[...qs.choices.children][guest.ch.indexOf(guestRec.pick)]);aimGuess();Object.assign(cam,L.camReveal);
+  void qs.el.offsetHeight;qs.el.classList.remove('instant')};
 $('svMake').onclick=()=>{toTitle();openPick()};
 $('svSkip').onclick=()=>{guest=null;titleButtons()};
 $('skipGuest').onclick=()=>{guest=null;titleButtons()};
@@ -1070,6 +1088,7 @@ function update(dt){
   wobV+=(-280*wob-13*wobV)*dt;wob+=wobV*dt;      // かぼちゃのぷるん（減衰ばね）
   shakeT+=dt;
   const lit=state==='light'||state==='guess',res=lit&&st>2.6;
+  if(state==='guess')aimGuess();
   const C=state==='carve'?L.camCarve:state==='title'?L.camTitle:state==='guess'?(answered?L.camReveal:res?L.camGuess:L.camShow):res?L.camResult:L.camShow;
   const k=lit?(res?3.2:2.6):5;
   for(const key in C)cam[key]=damp(cam[key],C[key],k,dt);
