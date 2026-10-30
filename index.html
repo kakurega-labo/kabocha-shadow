@@ -795,7 +795,7 @@ ui.sheet.addEventListener('pointerdown',()=>{if(stamped)openResult()});
 const CATS=['ハロウィン','生きもの','食べもの','もの','自然・かたち'];
 const WL=[
   ['黒猫',0],['おばけ',0],['こうもり',0],['三日月',0],['魔女の帽子',0],['ほうき',0],['ドクロ',0],['クモ',0],['キャンディ',0],['星',0],['お墓',0],['カラス',0],
-  ['ミイラ',0],['オオカミ男',0],['フランケン',0],['魔女',0],['悪魔',0],['魔法の杖',0],['大鍋',0],['クモの巣',0],['目玉',0],['骨',0],['棺おけ',0],['お城',0],['フクロウ',0],['ろうそく',0],['カボチャ',0],
+  ['ミイラ',0],['オオカミ',0],['フランケン',0],['魔女',0],['悪魔',0],['魔法の杖',0],['大鍋',0],['クモの巣',0],['目玉',0],['骨',0],['棺おけ',0],['お城',0],['フクロウ',0],['ろうそく',0],['カボチャ',0],
   ['ウサギ',1],['イヌ',1],['ネズミ',1],['ブタ',1],['ゾウ',1],['キリン',1],['ウマ',1],['ライオン',1],['ヘビ',1],['カエル',1],['カメ',1],['カタツムリ',1],
   ['魚',1],['クジラ',1],['タコ',1],['カニ',1],['イカ',1],['鳥',1],['アヒル',1],['ペンギン',1],['チョウ',1],['トンボ',1],['ハチ',1],['恐竜',1],
   ['リンゴ',2],['バナナ',2],['ブドウ',2],['イチゴ',2],['洋なし',2],['さくらんぼ',2],['ニンジン',2],['おにぎり',2],['ソフトクリーム',2],['ドーナツ',2],['ケーキ',2],['目玉焼き',2],['ハンバーガー',2],['ピザ',2],['プリン',2],
@@ -803,7 +803,7 @@ const WL=[
   ['木',4],['花',4],['葉っぱ',4],['キノコ',4],['サボテン',4],['山',4],['雲',4],['太陽',4],['雷',4],['雨つぶ',4],['雪だるま',4],['手',4],['足あと',4],['矢印',4],['ダイヤ',4],
 ];
 const WORDS=WL.map(w=>w[0]),CAT_OF=WL.map(w=>w[1]);
-const ODAI=['黒猫','おばけ','こうもり','三日月','魔女の帽子','大鍋','ドクロ','キャンディ','星','お墓','カラス','オオカミ男','お城','フクロウ','ろうそく','カボチャ',
+const ODAI=['黒猫','おばけ','こうもり','三日月','魔女の帽子','大鍋','ドクロ','キャンディ','星','お墓','カラス','オオカミ','お城','フクロウ','ろうそく','カボチャ',
   'ウサギ','イヌ','ネズミ','ゾウ','キリン','ヘビ','カエル','カメ','カタツムリ','魚','クジラ','タコ','カニ','鳥','ペンギン','チョウ','恐竜',
   'リンゴ','バナナ','ブドウ','洋なし','さくらんぼ','おにぎり','ソフトクリーム','家','傘','ハート','鍵','王冠','ロケット','飛行機','電球','ベル','ギター','マグカップ','風船',
   '木','キノコ','サボテン','雲','雷','雨つぶ','雪だるま','手','ダイヤ'].map(w=>WORDS.indexOf(w));
@@ -824,12 +824,40 @@ const qz=v=>clamp(Math.round((v+1.1)/2.2*255),0,255),dq=b=>b/255*2.2-1.1;
 function mixBytes(B,seed){let x=(Math.imul(seed+1,2654435761)^0x9e3779b9)>>>0||1;const o=new Array(B.length);
   for(let i=0;i<B.length;i++){x^=x<<13;x>>>=0;x^=x>>>17;x^=x<<5;x>>>=0;o[i]=B[i]^(x&255)}return o}
 const sum8=B=>B.reduce((a,b)=>(a+b)&255,0);
-function encodeQuiz(ans,ch,ps){const list=ps.slice(-60),P=[ans,...ch,list.length];
-  for(const p of list){let pts=[p.pts[0]];for(const q of p.pts){const l=pts[pts.length-1];if(Math.hypot(q[0]-l[0],q[1]-l[1])>.028)pts.push(q)}
-    pts.push(p.pts[p.pts.length-1]);if(pts.length>255){const k=pts.length/255;pts=Array.from({length:255},(_,i)=>pts[Math.floor(i*k)])}
-    P.push(p.fill?1:0,pts.length);for(const q of pts)P.push(qz(q[0]),qz(q[1]))}
-  P.push(sum8(P));const seed=Math.random()*256|0;
-  return toB32([2,seed,...mixBytes(P,seed)])}
+// 版3（今の出し方）：線を間引き（RDP、0.006 より細かい揺れを捨てる）、点は前の点との差だけを可変長で書く
+// （指数ゴロム符号。短い差ほど短いビット列）。ビット列を 62 文字（0-9a-zA-Z）で書くので、版2の約5分の1の長さ
+function rdp(pts,tol){const n=pts.length;if(n<3)return pts.slice();const keep=new Uint8Array(n);keep[0]=keep[n-1]=1;const stk=[0,n-1];
+  while(stk.length){const b=stk.pop(),a=stk.pop(),[ax,ay]=pts[a],dx=pts[b][0]-ax,dy=pts[b][1]-ay,l=Math.hypot(dx,dy);let md=tol,mi=-1;
+    for(let i=a+1;i<b;i++){const ex=pts[i][0]-ax,ey=pts[i][1]-ay,d=l>1e-6?Math.abs(ex*dy-ey*dx)/l:Math.hypot(ex,ey);if(d>md){md=d;mi=i}}
+    if(mi>=0){keep[mi]=1;stk.push(a,mi,mi,b)}}
+  return pts.filter((_,i)=>keep[i])}
+const B62='0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+const egLen=(v,k)=>{let x=(v>>k)+1,n=0;while(x>>n)n++;return 2*n-1+k};
+function encodeQuiz(ans,ch,ps){
+  const bits=[],put=(v,n)=>{for(let i=n-1;i>=0;i--)bits.push(v>>i&1)},
+    eg=(v,k)=>{const x=(v>>k)+1;let n=0;while(x>>n)n++;put(0,n-1);put(x,n);put(v&((1<<k)-1),k)},zz=v=>v<0?-2*v-1:2*v;
+  const list=ps.slice(-60);put(ch.indexOf(ans),2);for(const c of ch)put(c,7);put(list.length,6);
+  for(const p of list){
+    const s=[];for(const z of rdp(p.pts,.006)){const q=[qz(z[0]),qz(z[1])],l=s[s.length-1];if(!l||l[0]!==q[0]||l[1]!==q[1])s.push(q)}
+    if(s.length<2)s.push(s[0]);
+    const d=[];for(let i=1;i<s.length;i++)d.push(zz(s[i][0]-s[i-1][0]),zz(s[i][1]-s[i-1][1]));
+    let k=0,c=1e9;for(let t=0;t<6;t++){const v=d.reduce((a,x)=>a+egLen(x,t),0);if(v<c){c=v;k=t}}   // 線ごとに一番短くなる k
+    put(p.fill?1:0,1);put(k,3);eg(s.length-2,2);put(s[0][0],8);put(s[0][1],8);for(const x of d)eg(x,k)}
+  while(bits.length%8)bits.push(0);
+  const B=[];for(let i=0;i<bits.length;i+=8)B.push(bits.slice(i,i+8).reduce((a,b)=>a*2+b,0));B.push(sum8(B));
+  const seed=Math.random()*256|0;let n=1n;for(const x of[seed,...mixBytes(B,seed)])n=n<<8n|BigInt(x);   // 先頭の 1 は桁落ち防ぎ
+  let o='';while(n){o=B62[Number(n%62n)]+o;n/=62n}return o}
+function decodeV3(str){
+  let n=0n;for(const c of str){const v=B62.indexOf(c);if(v<0)return null;n=n*62n+BigInt(v)}
+  const B=[];while(n>1n){B.unshift(Number(n&255n));n>>=8n}if(n!==1n||B.length<4)return null;
+  const P=mixBytes(B.slice(1),B[0]),body=P.slice(0,-1);if(sum8(body)!==P[P.length-1])return null;
+  let pos=0;const N=body.length*8,get=m=>{let v=0;for(let i=0;i<m;i++){if(pos>=N)throw 0;v=v*2+(body[pos>>3]>>(7-(pos&7))&1);pos++}return v},
+    eg=k=>{let z=0;while(!get(1)){if(++z>20)throw 0}return((1<<z|get(z))-1)*(1<<k)+get(k)},un=v=>v&1?-(v+1)/2:v/2;
+  try{const ai=get(2),ch=[get(7),get(7),get(7),get(7)],cnt=get(6),polys=[];
+    if(ch.some(c=>c>=WORDS.length)||new Set(ch).size<4||!cnt)return null;
+    for(let j=0;j<cnt;j++){const fill=get(1)===1,k=get(3),m=eg(2)+2;let x=get(8),y=get(8);const pts=[[dq(x),dq(y)]];
+      for(let i=1;i<m;i++){x+=un(eg(k));y+=un(eg(k));pts.push([dq(x),dq(y)])}polys.push({pts,fill})}
+    return{ans:ch[ai],ch,polys}}catch(e){return null}}
 function parseQuiz(P){
   if(P.length<6)return null;let i=0;const ans=P[i++],ch=P.slice(i,i+4);i+=4;const n=P[i++];
   if(ans>=WORDS.length||!ch.includes(ans)||ch.some(c=>c>=WORDS.length)||new Set(ch).size<4)return null;
@@ -837,6 +865,7 @@ function parseQuiz(P){
     const pts=[];for(let j=0;j<m;j++)pts.push([dq(P[i++]),dq(P[i++])]);ps.push({pts,fill})}
   return ps.length?{ans,ch,polys:ps}:null}
 function decodeQuiz(h){
+  if(/^#k[0-9a-zA-Z]{6,}$/.test(h))return decodeV3(h.slice(2));
   if(!/^#q[0-9a-v]{8,}$/.test(h))return null;const B=fromB32(h.slice(2));if(!B||B.length<4)return null;
   if(B[0]===1)return parseQuiz(B.slice(1));                     // 版1（目くらましなし）も読める
   if(B[0]!==2)return null;
@@ -845,7 +874,10 @@ function decodeQuiz(h){
 
 const EMOJI_FONT='"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
 // 語の形：お題モードの形があればそれ（結果の答え合わせと同じ形）、なければ手描きの形、なければ絵文字
+const polyPath=P=>c=>{c.moveTo(P[0][0],P[0][1]);for(let i=1;i<P.length;i++)c.lineTo(P[i][0],P[i][1]);c.closePath()};
 const HAND={
+  // ゾンビの絵文字だと別物に見えるので、手で描く：平らな頭とボルトのフランケン
+  'フランケン':polyPath([[-.5,-.78],[.5,-.78],[.5,-.5],[.44,-.46],[.46,-.1],[.6,-.12],[.6,0],[.46,0],[.42,.22],[.3,.44],[.18,.54],[.16,.7],[.62,.8],[.8,.95],[-.8,.95],[-.62,.8],[-.16,.7],[-.18,.54],[-.3,.44],[-.42,.22],[-.46,0],[-.6,0],[-.6,-.12],[-.46,-.1],[-.44,-.46],[-.5,-.5],]),
   '魔女の帽子':c=>{c.moveTo(-.9,.62);c.quadraticCurveTo(0,.38,.9,.62);c.quadraticCurveTo(0,.86,-.9,.62);c.closePath();
     c.moveTo(-.5,.58);c.quadraticCurveTo(-.2,-.1,.05,-.55);c.quadraticCurveTo(.35,-.85,.62,-.72);c.quadraticCurveTo(.32,-.55,.3,-.2);c.lineTo(.5,.58);c.closePath()},
   '大鍋':c=>{c.ellipse(0,.12,.78,.62,0,0,Math.PI);c.lineTo(-.86,-.2);c.lineTo(.86,-.2);c.closePath();
@@ -940,7 +972,7 @@ function openPick(){PK.step=1;PK.ans=-1;PK.traps=[];PK.tab=0;renderPick();showSc
 $('quizBtn').onclick=()=>{Snd.init();openPick()};
 $('pickBack').onclick=()=>toTitle();
 function prepareQuiz(){
-  quizLink=(SHARE_URL||location.href.split('#')[0])+'#q'+encodeQuiz(quizAns,quizCh,polys);
+  quizLink=(SHARE_URL||location.href.split('#')[0])+'#k'+encodeQuiz(quizAns,quizCh,polys);
   QZ.link.value=quizLink;QZ.ans.textContent='答え　'+WORDS[quizAns]+'（当てる人にはないしょ）';QZ.copy.textContent='コピー';
   quizText='🎃 影絵クイズ\nかぼちゃを彫って灯したら、壁にこんな影が。\nこの影、何に見える？ 4択で当ててみて👇';
   QZ.x.href=xIntent(quizText,quizLink);
