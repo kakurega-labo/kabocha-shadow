@@ -786,7 +786,7 @@ function prepareResult(){
   const f=Math.round(result.F*100),i=Math.round(result.iou*100);R.F.textContent=f+'%';R.I.textContent=i+'%';R.Fb.style.width=R.Ib.style.width='0';
   R.best.className='best'+(up?' up':'');
   R.best.textContent=up?(bestPrev?`自己ベスト更新！ ${bestPrev}% → ${result.score}%`:`${sh.name}の自己ベスト ${result.score}%`):`${sh.name}の自己ベスト ${bestPrev}%`;
-  shareText=`🎃 お題「${sh.name}」をかぼちゃに彫って灯してみた\n影の一致 ${result.score}%｜${tier.say(sh.name)}${up&&bestPrev?'（自己ベスト更新！）':''}\nあなたも彫ってみて👇`;
+  shareText=`🎃 お題「${sh.name}」をかぼちゃに彫って灯してみた🎃\n影の一致 ${result.score}%｜${tier.say(sh.name)}${up&&bestPrev?'（自己ベスト更新！）':''}\nあなたも彫ってみて👇`;
   R.x.href=xIntent(shareText,SHARE_URL||location.href.split('#')[0]);
   R.img.removeAttribute('src');drawCard();
 }
@@ -800,8 +800,9 @@ function showScreen(el){closeResult();resOpen=true;el.inert=false;el.classList.a
    画像を共有：スマホの共有メニューに、画像と本文（URL とハッシュタグ入り）をまとめて渡す。
    共有メニューは「押した瞬間」に呼ばないと iPhone で断られるので、画面に出ている画像からその場でファイルを作る（待たない） */
 const TAGS=['かぼちゃの影絵'];
-const xIntent=(text,url)=>'https://twitter.com/intent/tweet?text='+encodeURIComponent(text)+(url?'&url='+encodeURIComponent(url):'')+'&hashtags='+encodeURIComponent(TAGS.join(','));
+// 本文・URL・ハッシュタグを1行ずつ。X の url/hashtags 引数は X が並びを決めてしまう（同じ行にまとめられる）ので使わず、全部を本文に入れる
 const sheetText=(text,url)=>text+'\n'+(url?url+'\n':'')+TAGS.map(t=>'#'+t).join(' ');
+const xIntent=(text,url)=>'https://twitter.com/intent/tweet?text='+encodeURIComponent(sheetText(text,url));
 function fileFromImg(img,name){const u=img.src;if(!u||!u.startsWith('data:'))return null;
   const [h,b]=u.split(','),type=h.slice(5,h.indexOf(';')),bin=atob(b),a=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)a[i]=bin.charCodeAt(i);
   return new File([a],name,{type})}
